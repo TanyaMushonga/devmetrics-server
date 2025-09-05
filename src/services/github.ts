@@ -17,7 +17,7 @@ export async function fetchGitHubProfile(token: string) {
         websiteUrl
         twitterUsername
         email
-        publicRepositories {
+        repositories(privacy: PUBLIC) {
           totalCount
         }
         followers {
@@ -61,7 +61,6 @@ export async function fetchGitHubRepos(token: string, cursor?: string) {
             description
             url
             sshUrl
-            cloneUrl
             isPrivate
             primaryLanguage {
               name

@@ -19,8 +19,8 @@ app.use(express.json());
 app.use(requestLogger);
 
 // Routes
-app.use("/health", healthRouter);
-app.use("/users", usersRouter);
+app.use("/api/health", healthRouter);
+app.use("/api/users", usersRouter);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

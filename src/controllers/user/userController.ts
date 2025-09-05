@@ -175,8 +175,7 @@ export const syncUserData = async (
       return;
     }
 
-    // Import syncUserData here to avoid circular dependencies
-    const { syncUserData: performSync } = await import("../../services/sync");
+       const { syncUserData: performSync } = await import("../../services/sync");
     await performSync(user.id);
 
     Logger.sync("MANUAL_TRIGGER", user.id, `Triggered by API for ${username}`);
