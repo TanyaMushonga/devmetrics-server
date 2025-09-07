@@ -140,19 +140,25 @@ export async function fetchRepositoryCommits(
   token: string,
   owner: string,
   repo: string,
-  since?: Date
+  since?: Date,
+  cursor?: string
 ) {
   const sinceDate = since
     ? since.toISOString()
-    : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    : new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000).toISOString(); // Changed to 6 months
 
   const query = gql`
-    query ($owner: String!, $repo: String!, $since: GitTimestamp) {
+    query (
+      $owner: String!
+      $repo: String!
+      $since: GitTimestamp
+      $cursor: String
+    ) {
       repository(owner: $owner, name: $repo) {
         defaultBranchRef {
           target {
             ... on Commit {
-              history(first: 100, since: $since) {
+              history(first: 100, since: $since, after: $cursor) {
                 pageInfo {
                   hasNextPage
                   endCursor
@@ -184,7 +190,71 @@ export async function fetchRepositoryCommits(
   return request(
     GITHUB_API_URL,
     query,
-    { owner, repo, since: sinceDate },
+    { owner, repo, since: sinceDate, cursor },
+    {
+      Authorization: `Bearer ${token}`,
+    }
+  );
+}
+
+export async function fetchAllRepositoryCommits(
+  token: string,
+  owner: string,
+  repo: string,
+  since?: Date,
+  cursor?: string
+) {
+  const sinceDate = since
+    ? since.toISOString()
+    : new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000).toISOString(); // Changed to 6 months
+
+  const query = gql`
+    query (
+      $owner: String!
+      $repo: String!
+      $since: GitTimestamp
+      $cursor: String
+    ) {
+      repository(owner: $owner, name: $repo) {
+        refs(refPrefix: "refs/heads/", first: 100) {
+          nodes {
+            name
+            target {
+              ... on Commit {
+                history(first: 100, since: $since, after: $cursor) {
+                  pageInfo {
+                    hasNextPage
+                    endCursor
+                  }
+                  nodes {
+                    oid
+                    message
+                    author {
+                      name
+                      email
+                      date
+                    }
+                    committer {
+                      name
+                      email
+                      date
+                    }
+                    additions
+                    deletions
+                    changedFiles
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  return request(
+    GITHUB_API_URL,
+    query,
+    { owner, repo, since: sinceDate, cursor },
     {
       Authorization: `Bearer ${token}`,
     }
