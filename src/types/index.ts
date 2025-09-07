@@ -98,3 +98,6 @@ export type AsyncMiddleware = (
   res: Response,
   next: NextFunction
 ) => Promise<void>;
+
+// Re-export leaderboard types
+export * from "./leaderboard";
