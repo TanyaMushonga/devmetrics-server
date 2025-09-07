@@ -5,6 +5,7 @@ import {
   getUserStats,
   syncUserData,
   getUserSyncStatus,
+  cleanupOldData,
 } from "../controllers/user";
 import {
   validateUsernameParam,
@@ -34,5 +35,8 @@ router.post("/:username/sync", syncRateLimit, syncUserData);
 
 // GET /users/:username/status - Get user sync status
 router.get("/:username/status", getUserSyncStatus);
+
+// POST /cleanup - Manual cleanup of old data (admin endpoint)
+router.post("/cleanup", syncRateLimit, cleanupOldData);
 
 export default router;
