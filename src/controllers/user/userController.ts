@@ -175,7 +175,7 @@ export const syncUserData = async (
       return;
     }
 
-       const { syncUserData: performSync } = await import("../../services/sync");
+    const { syncUserData: performSync } = await import("../../services/sync");
     await performSync(user.id);
 
     Logger.sync("MANUAL_TRIGGER", user.id, `Triggered by API for ${username}`);
@@ -220,5 +220,32 @@ export const getUserSyncStatus = async (
   } catch (error) {
     Logger.error("Error fetching user sync status:", error);
     ApiResponseUtil.internalError(res, "Failed to fetch user sync status");
+  }
+};
+
+export const cleanupOldData = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    Logger.info("Manual cleanup of old data requested");
+
+    const { cleanupOldCommits } = await import("../../services/sync");
+    const deletedCount = await cleanupOldCommits();
+
+    Logger.sync(
+      "MANUAL_CLEANUP",
+      "admin",
+      `Cleaned up ${deletedCount} old commits`
+    );
+
+    ApiResponseUtil.success(
+      res,
+      { deletedCommits: deletedCount },
+      "Old data cleanup completed successfully"
+    );
+  } catch (error) {
+    Logger.error("Error cleaning up old data:", error);
+    ApiResponseUtil.internalError(res, "Failed to cleanup old data");
   }
 };
