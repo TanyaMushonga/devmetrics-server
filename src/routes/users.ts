@@ -6,6 +6,9 @@ import {
   syncUserData,
   getUserSyncStatus,
   cleanupOldData,
+  getUserContributionHeatmap,
+  getUserContributionActivity,
+  getUserContributionStreak,
 } from "../controllers/user";
 import {
   validateUsernameParam,
@@ -29,6 +32,15 @@ router.get("/:username/repos", getUserRepositories);
 
 // GET /users/:username/stats - Get user statistics
 router.get("/:username/stats", getUserStats);
+
+// GET /users/:username/heatmap - Get user contribution heatmap data
+router.get("/:username/heatmap", getUserContributionHeatmap);
+
+// GET /users/:username/activity - Get user contribution activity
+router.get("/:username/activity", getUserContributionActivity);
+
+// GET /users/:username/streak - Get user contribution streak
+router.get("/:username/streak", getUserContributionStreak);
 
 // POST /users/:username/sync - Manual sync trigger (with stricter rate limiting)
 router.post("/:username/sync", syncRateLimit, syncUserData);
