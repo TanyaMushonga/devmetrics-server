@@ -5,10 +5,7 @@ import {
   syncDevelopersData,
   getDeveloperProfile,
 } from "../controllers/leaderboard";
-import {
-  generalRateLimit,
-  syncRateLimit,
-} from "../middleware";
+import { generalRateLimit, syncRateLimit } from "../middleware";
 
 const router = Router();
 
