@@ -5,11 +5,11 @@ const leaderboardService = new LeaderboardService();
 
 export async function leaderboardSyncJob() {
   Logger.info("Starting leaderboard sync job...");
-  
+
   try {
     // Sync existing developers first
     await leaderboardService.syncAllDevelopers();
-    
+
     // Popular locations to keep updated
     const popularLocations = [
       { scope: "country", location: "Zimbabwe" },
@@ -22,17 +22,19 @@ export async function leaderboardSyncJob() {
 
     for (const loc of popularLocations) {
       try {
-        Logger.info(`Updating leaderboard for ${loc.scope} ${loc.location || 'global'}`);
+        Logger.info(
+          `Updating leaderboard for ${loc.scope} ${loc.location || "global"}`
+        );
         await leaderboardService.populateLeaderboardData(
-          loc.scope, 
-          loc.location, 
+          loc.scope,
+          loc.location,
           100 // Limit to 100 developers per location
         );
       } catch (error) {
         Logger.error(`Failed to update ${loc.scope} ${loc.location}:`, error);
       }
     }
-    
+
     Logger.info("Leaderboard sync job completed successfully");
   } catch (error) {
     Logger.error("Leaderboard sync job failed:", error);
