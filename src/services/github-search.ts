@@ -10,7 +10,7 @@ export async function searchDevelopersByLocation(
   after?: string
 ): Promise<any> {
   const query = `location:"${location}" repos:>5 followers:>10`;
-  
+
   const gqlQuery = `
     query SearchDevelopers($query: String!, $after: String, $first: Int!) {
       search(query: $query, type: USER, first: $first, after: $after) {
@@ -63,32 +63,44 @@ export async function searchDevelopersByLocation(
   `;
 
   try {
-    return await request(GITHUB_API_URL, gqlQuery, {
-      query,
-      first,
-      after,
-    }, {
-      Authorization: `Bearer ${token}`,
-    });
+    return await request(
+      GITHUB_API_URL,
+      gqlQuery,
+      {
+        query,
+        first,
+        after,
+      },
+      {
+        Authorization: `Bearer ${token}`,
+      }
+    );
   } catch (error: any) {
     if (error.response?.status === 502 || error.response?.status === 504) {
-      throw new Error(`GitHub API temporarily unavailable (${error.response.status}). Please try again later.`);
+      throw new Error(
+        `GitHub API temporarily unavailable (${error.response.status}). Please try again later.`
+      );
     }
     if (error.response?.status === 403) {
-      throw new Error('GitHub API rate limit exceeded. Please wait before retrying.');
+      throw new Error(
+        "GitHub API rate limit exceeded. Please wait before retrying."
+      );
     }
-    if (error.response?.errors?.some((err: any) => err.type === 'RESOURCE_LIMITS_EXCEEDED')) {
-      throw new Error('GitHub API resource limits exceeded. Query too complex.');
+    if (
+      error.response?.errors?.some(
+        (err: any) => err.type === "RESOURCE_LIMITS_EXCEEDED"
+      )
+    ) {
+      throw new Error(
+        "GitHub API resource limits exceeded. Query too complex."
+      );
     }
     throw error;
   }
 }
 
 // Get detailed developer information
-export async function getDeveloperDetails(
-  token: string,
-  username: string
-) {
+export async function getDeveloperDetails(token: string, username: string) {
   const query = gql`
     query GetDeveloper($username: String!) {
       user(login: $username) {
@@ -128,7 +140,9 @@ export async function getDeveloperDetails(
             defaultBranchRef {
               target {
                 ... on Commit {
-                  history(first: 100, since: "${new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000).toISOString()}") {
+                  history(first: 100, since: "${new Date(
+                    Date.now() - 6 * 30 * 24 * 60 * 60 * 1000
+                  ).toISOString()}") {
                     totalCount
                     nodes {
                       oid
@@ -265,22 +279,37 @@ export async function searchDevelopersGlobally(
   `;
 
   try {
-    return await request(GITHUB_API_URL, gqlQuery, {
-      query,
-      first: limit,
-      after: cursor,
-    }, {
-      Authorization: `Bearer ${token}`,
-    });
+    return await request(
+      GITHUB_API_URL,
+      gqlQuery,
+      {
+        query,
+        first: limit,
+        after: cursor,
+      },
+      {
+        Authorization: `Bearer ${token}`,
+      }
+    );
   } catch (error: any) {
     if (error.response?.status === 502 || error.response?.status === 504) {
-      throw new Error(`GitHub API temporarily unavailable (${error.response.status}). Please try again later.`);
+      throw new Error(
+        `GitHub API temporarily unavailable (${error.response.status}). Please try again later.`
+      );
     }
     if (error.response?.status === 403) {
-      throw new Error('GitHub API rate limit exceeded. Please wait before retrying.');
+      throw new Error(
+        "GitHub API rate limit exceeded. Please wait before retrying."
+      );
     }
-    if (error.response?.errors?.some((err: any) => err.type === 'RESOURCE_LIMITS_EXCEEDED')) {
-      throw new Error('GitHub API resource limits exceeded. Query too complex.');
+    if (
+      error.response?.errors?.some(
+        (err: any) => err.type === "RESOURCE_LIMITS_EXCEEDED"
+      )
+    ) {
+      throw new Error(
+        "GitHub API resource limits exceeded. Query too complex."
+      );
     }
     throw error;
   }
