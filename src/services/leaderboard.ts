@@ -1,6 +1,10 @@
 import prisma from "../lib/prisma";
 import { Logger } from "../utils";
-import { searchDevelopersByLocation, getDeveloperDetails, searchDevelopersGlobally } from "./github-search";
+import {
+  searchDevelopersByLocation,
+  getDeveloperDetails,
+  searchDevelopersGlobally,
+} from "./github-search";
 import { DeveloperScoringEngine, DeveloperMetrics } from "./scoring-engine";
 
 export interface LeaderboardQuery {
@@ -58,10 +62,21 @@ export class LeaderboardService {
 
   // Get leaderboard data from database
   async getLeaderboard(query: LeaderboardQuery): Promise<LeaderboardResponse> {
-    const { scope, location, metric, timeframe, limit = 20, offset = 0 } = query;
+    const {
+      scope,
+      location,
+      metric,
+      timeframe,
+      limit = 20,
+      offset = 0,
+    } = query;
 
     try {
-      Logger.info(`Fetching leaderboard: ${scope} ${location || 'global'} ${metric} ${timeframe}`);
+      Logger.info(
+        `Fetching leaderboard: ${scope} ${
+          location || "global"
+        } ${metric} ${timeframe}`
+      );
 
       // First check if we have recent data for this query
       const existingEntries = await prisma.leaderboardEntry.findMany({
@@ -85,8 +100,10 @@ export class LeaderboardService {
       });
 
       if (existingEntries.length > 0) {
-        Logger.info(`Found ${existingEntries.length} cached leaderboard entries`);
-        
+        Logger.info(
+          `Found ${existingEntries.length} cached leaderboard entries`
+        );
+
         const total = await prisma.leaderboardEntry.count({
           where: {
             scope,
@@ -128,13 +145,19 @@ export class LeaderboardService {
             location: scope === "global" ? undefined : location,
             metric,
             timeframe,
-            lastUpdated: (existingEntries[0]?.snapshotDate || new Date()).toISOString(),
+            lastUpdated: (
+              existingEntries[0]?.snapshotDate || new Date()
+            ).toISOString(),
           },
         };
       }
 
       // If no recent data, trigger population for this location
-      Logger.info(`No recent data found, triggering population for ${scope} ${location || 'global'}`);
+      Logger.info(
+        `No recent data found, triggering population for ${scope} ${
+          location || "global"
+        }`
+      );
       await this.populateLeaderboardData(scope, location, 100);
 
       // Fetch again after population
@@ -152,10 +175,15 @@ export class LeaderboardService {
     limit: number = 100
   ): Promise<{ success: boolean; developersAdded: number; message?: string }> {
     try {
-      Logger.info(`Starting leaderboard population: ${scope} ${location || 'global'} (limit: ${limit})`);
+      Logger.info(
+        `Starting leaderboard population: ${scope} ${
+          location || "global"
+        } (limit: ${limit})`
+      );
 
       // Get GitHub token (you'll need to configure this)
-      const githubToken = process.env.GITHUB_TOKEN || process.env.GITHUB_ACCESS_TOKEN;
+      const githubToken =
+        process.env.GITHUB_TOKEN || process.env.GITHUB_ACCESS_TOKEN;
       if (!githubToken) {
         throw new Error("GitHub token not configured");
       }
@@ -175,81 +203,112 @@ export class LeaderboardService {
         while (retryCount < maxRetries && !pageSuccess) {
           try {
             let response: any;
-            
+
             if (scope === "global") {
-              response = await searchDevelopersGlobally(githubToken, { 
-                limit: 20, 
-                cursor 
+              response = await searchDevelopersGlobally(githubToken, {
+                limit: 20,
+                cursor,
               });
             } else if (location) {
-              response = await searchDevelopersByLocation(githubToken, location, 20, cursor);
+              response = await searchDevelopersByLocation(
+                githubToken,
+                location,
+                20,
+                cursor
+              );
             } else {
               throw new Error("Location required for non-global scope");
             }
 
             const developers = response.search?.nodes || [];
             allDevelopers = allDevelopers.concat(developers);
-            
+
             hasNextPage = response.search?.pageInfo?.hasNextPage || false;
             cursor = response.search?.pageInfo?.endCursor;
             pageCount++;
             pageSuccess = true;
 
-            Logger.info(`Fetched page ${pageCount}: ${developers.length} developers (total: ${allDevelopers.length})`);
-            
+            Logger.info(
+              `Fetched page ${pageCount}: ${developers.length} developers (total: ${allDevelopers.length})`
+            );
+
             // Add delay to avoid rate limiting
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
+            await new Promise((resolve) => setTimeout(resolve, 2000));
           } catch (pageError: any) {
             retryCount++;
-            Logger.error(`Error fetching page ${pageCount + 1} (attempt ${retryCount}/${maxRetries}):`, pageError.message || pageError);
-            
+            Logger.error(
+              `Error fetching page ${
+                pageCount + 1
+              } (attempt ${retryCount}/${maxRetries}):`,
+              pageError.message || pageError
+            );
+
             if (retryCount >= maxRetries) {
-              Logger.warn(`Max retries reached for page ${pageCount + 1}. Stopping pagination.`);
+              Logger.warn(
+                `Max retries reached for page ${
+                  pageCount + 1
+                }. Stopping pagination.`
+              );
               hasNextPage = false;
               break;
             }
-            
+
             // Exponential backoff
             const delay = Math.pow(2, retryCount) * 1000;
             Logger.info(`Retrying in ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
+            await new Promise((resolve) => setTimeout(resolve, delay));
           }
         }
 
         if (!pageSuccess) {
-          Logger.warn(`Failed to fetch page ${pageCount + 1} after ${maxRetries} attempts. Continuing with available data.`);
+          Logger.warn(
+            `Failed to fetch page ${
+              pageCount + 1
+            } after ${maxRetries} attempts. Continuing with available data.`
+          );
           break;
         }
       }
 
       if (pageCount >= maxPages) {
-        Logger.warn(`Reached maximum page limit (${maxPages}). Some developers may not be included.`);
+        Logger.warn(
+          `Reached maximum page limit (${maxPages}). Some developers may not be included.`
+        );
       }
 
-      Logger.info(`Fetched total of ${allDevelopers.length} developers from GitHub`);
+      Logger.info(
+        `Fetched total of ${allDevelopers.length} developers from GitHub`
+      );
 
       if (allDevelopers.length === 0) {
-        Logger.warn(`No developers found for ${scope} ${location || 'global'}`);
+        Logger.warn(`No developers found for ${scope} ${location || "global"}`);
         return {
           success: false,
           developersAdded: 0,
-          message: `No developers found for ${scope} ${location || 'global'}`,
+          message: `No developers found for ${scope} ${location || "global"}`,
         };
       }
 
       // Score all developers and sort by score
       const scoredDevelopers = await this.scoreAndSortDevelopers(allDevelopers);
-      
+
       // Only keep the top N developers (based on limit parameter)
       const topDevelopers = scoredDevelopers.slice(0, limit);
-      
-      Logger.info(`Storing top ${topDevelopers.length} developers out of ${allDevelopers.length} total`);
+
+      Logger.info(
+        `Storing top ${topDevelopers.length} developers out of ${allDevelopers.length} total`
+      );
 
       let developersAdded = 0;
-      const metrics: Array<"commits" | "pullRequests" | "issues" | "stars" | "overall"> = 
-        ["commits", "pullRequests", "issues", "stars", "overall"];
-      const timeframes: Array<"7d" | "30d" | "90d" | "1y"> = ["7d", "30d", "90d", "1y"];
+      const metrics: Array<
+        "commits" | "pullRequests" | "issues" | "stars" | "overall"
+      > = ["commits", "pullRequests", "issues", "stars", "overall"];
+      const timeframes: Array<"7d" | "30d" | "90d" | "1y"> = [
+        "7d",
+        "30d",
+        "90d",
+        "1y",
+      ];
 
       // Clear existing leaderboard entries for this location to ensure fresh data
       await this.clearExistingLeaderboardEntries(scope, location);
@@ -257,15 +316,22 @@ export class LeaderboardService {
       for (const scoredDev of topDevelopers) {
         try {
           // Save or update developer
-          const developer = await this.saveDeveloper(scoredDev.developer, scope, location);
+          const developer = await this.saveDeveloper(
+            scoredDev.developer,
+            scope,
+            location
+          );
           if (developer) {
             developersAdded++;
 
             // Create leaderboard entries using the pre-calculated metrics
             for (const metric of metrics) {
               for (const timeframe of timeframes) {
-                const score = this.scoringEngine.calculateMetricScore(scoredDev.metrics, metric);
-                
+                const score = this.scoringEngine.calculateMetricScore(
+                  scoredDev.metrics,
+                  metric
+                );
+
                 await prisma.leaderboardEntry.create({
                   data: {
                     developerId: developer.id,
@@ -282,7 +348,10 @@ export class LeaderboardService {
             }
           }
         } catch (devError) {
-          Logger.error(`Error processing developer ${scoredDev.developer.login}:`, devError);
+          Logger.error(
+            `Error processing developer ${scoredDev.developer.login}:`,
+            devError
+          );
         }
       }
 
@@ -293,7 +362,11 @@ export class LeaderboardService {
         }
       }
 
-      Logger.info(`Successfully populated ${developersAdded} top developers for ${scope} ${location || 'global'} out of ${allDevelopers.length} total found`);
+      Logger.info(
+        `Successfully populated ${developersAdded} top developers for ${scope} ${
+          location || "global"
+        } out of ${allDevelopers.length} total found`
+      );
 
       return {
         success: true,
@@ -311,19 +384,31 @@ export class LeaderboardService {
   }
 
   // Save developer to database
-  private async saveDeveloper(githubUser: any, scope: string, location?: string) {
+  private async saveDeveloper(
+    githubUser: any,
+    scope: string,
+    location?: string
+  ) {
     try {
       // Extract location data
-      const userLocation = this.extractLocationData(githubUser.location, scope, location);
-      
+      const userLocation = this.extractLocationData(
+        githubUser.location,
+        scope,
+        location
+      );
+
       // Calculate total stars from repositories
-      const totalStars = githubUser.repositories?.nodes?.reduce(
-        (sum: number, repo: any) => sum + (repo.stargazerCount || 0),
-        0
-      ) || 0;
+      const totalStars =
+        githubUser.repositories?.nodes?.reduce(
+          (sum: number, repo: any) => sum + (repo.stargazerCount || 0),
+          0
+        ) || 0;
 
       // Calculate estimated reviews (based on pull requests - this is an approximation)
-      const totalReviews = Math.floor((githubUser.contributionsCollection?.totalPullRequestContributions || 0) * 0.8);
+      const totalReviews = Math.floor(
+        (githubUser.contributionsCollection?.totalPullRequestContributions ||
+          0) * 0.8
+      );
 
       const developer = await prisma.developer.upsert({
         where: {
@@ -340,9 +425,13 @@ export class LeaderboardService {
           continent: userLocation.continent,
           website: githubUser.websiteUrl,
           twitterHandle: githubUser.twitterUsername,
-          totalCommits: githubUser.contributionsCollection?.totalCommitContributions || 0,
-          totalPullRequests: githubUser.contributionsCollection?.totalPullRequestContributions || 0,
-          totalIssues: githubUser.contributionsCollection?.totalIssueContributions || 0,
+          totalCommits:
+            githubUser.contributionsCollection?.totalCommitContributions || 0,
+          totalPullRequests:
+            githubUser.contributionsCollection?.totalPullRequestContributions ||
+            0,
+          totalIssues:
+            githubUser.contributionsCollection?.totalIssueContributions || 0,
           totalStars,
           totalReviews,
           totalRepos: githubUser.repositories?.totalCount || 0,
@@ -363,9 +452,13 @@ export class LeaderboardService {
           continent: userLocation.continent,
           website: githubUser.websiteUrl,
           twitterHandle: githubUser.twitterUsername,
-          totalCommits: githubUser.contributionsCollection?.totalCommitContributions || 0,
-          totalPullRequests: githubUser.contributionsCollection?.totalPullRequestContributions || 0,
-          totalIssues: githubUser.contributionsCollection?.totalIssueContributions || 0,
+          totalCommits:
+            githubUser.contributionsCollection?.totalCommitContributions || 0,
+          totalPullRequests:
+            githubUser.contributionsCollection?.totalPullRequestContributions ||
+            0,
+          totalIssues:
+            githubUser.contributionsCollection?.totalIssueContributions || 0,
           totalStars,
           totalReviews,
           totalRepos: githubUser.repositories?.totalCount || 0,
@@ -382,7 +475,11 @@ export class LeaderboardService {
   }
 
   // Extract and normalize location data
-  private extractLocationData(location: string, scope: string, filterLocation?: string) {
+  private extractLocationData(
+    location: string,
+    scope: string,
+    filterLocation?: string
+  ) {
     // This is a simplified version - you might want to use a proper geocoding service
     let country = null;
     let city = null;
@@ -390,27 +487,27 @@ export class LeaderboardService {
 
     if (location) {
       const locationLower = location.toLowerCase();
-      
+
       // Simple country detection (expand this as needed)
-      if (locationLower.includes('zimbabwe')) {
-        country = 'Zimbabwe';
-        continent = 'Africa';
-      } else if (locationLower.includes('south africa')) {
-        country = 'South Africa';
-        continent = 'Africa';
-      } else if (locationLower.includes('kenya')) {
-        country = 'Kenya';
-        continent = 'Africa';
-      } else if (locationLower.includes('nigeria')) {
-        country = 'Nigeria';
-        continent = 'Africa';
-      } else if (locationLower.includes('ghana')) {
-        country = 'Ghana';
-        continent = 'Africa';
+      if (locationLower.includes("zimbabwe")) {
+        country = "Zimbabwe";
+        continent = "Africa";
+      } else if (locationLower.includes("south africa")) {
+        country = "South Africa";
+        continent = "Africa";
+      } else if (locationLower.includes("kenya")) {
+        country = "Kenya";
+        continent = "Africa";
+      } else if (locationLower.includes("nigeria")) {
+        country = "Nigeria";
+        continent = "Africa";
+      } else if (locationLower.includes("ghana")) {
+        country = "Ghana";
+        continent = "Africa";
       }
-      
+
       // Extract city if available
-      const parts = location.split(',');
+      const parts = location.split(",");
       if (parts.length > 1) {
         city = parts[0].trim();
       }
@@ -455,9 +552,16 @@ export class LeaderboardService {
         });
       }
 
-      Logger.info(`Updated rankings for ${scope} ${location || 'global'} ${metric} ${timeframe}: ${entries.length} entries`);
+      Logger.info(
+        `Updated rankings for ${scope} ${
+          location || "global"
+        } ${metric} ${timeframe}: ${entries.length} entries`
+      );
     } catch (error) {
-      Logger.error(`Error updating rankings for ${scope} ${location} ${metric} ${timeframe}:`, error);
+      Logger.error(
+        `Error updating rankings for ${scope} ${location} ${metric} ${timeframe}:`,
+        error
+      );
     }
   }
 
@@ -475,7 +579,8 @@ export class LeaderboardService {
         take: 50, // Limit to avoid rate limits
       });
 
-      const githubToken = process.env.GITHUB_TOKEN || process.env.GITHUB_ACCESS_TOKEN;
+      const githubToken =
+        process.env.GITHUB_TOKEN || process.env.GITHUB_ACCESS_TOKEN;
       if (!githubToken) {
         Logger.error("GitHub token not configured for sync");
         return;
@@ -483,12 +588,18 @@ export class LeaderboardService {
 
       for (const developer of developers) {
         try {
-          const details = await getDeveloperDetails(githubToken, developer.githubHandle) as any;
+          const details = (await getDeveloperDetails(
+            githubToken,
+            developer.githubHandle
+          )) as any;
           if (details.user) {
             await this.saveDeveloper(details.user, "global");
           }
         } catch (error) {
-          Logger.error(`Error syncing developer ${developer.githubHandle}:`, error);
+          Logger.error(
+            `Error syncing developer ${developer.githubHandle}:`,
+            error
+          );
         }
       }
 
@@ -533,25 +644,31 @@ export class LeaderboardService {
   }
 
   // Score and sort developers by their overall score
-  private async scoreAndSortDevelopers(developers: any[]): Promise<Array<{
-    developer: any;
-    metrics: DeveloperMetrics;
-    score: number;
-  }>> {
+  private async scoreAndSortDevelopers(developers: any[]): Promise<
+    Array<{
+      developer: any;
+      metrics: DeveloperMetrics;
+      score: number;
+    }>
+  > {
     const scoredDevelopers = [];
 
     for (const dev of developers) {
       try {
         // Calculate total stars from repositories
-        const totalStars = dev.repositories?.nodes?.reduce(
-          (sum: number, repo: any) => sum + (repo.stargazerCount || 0),
-          0
-        ) || 0;
+        const totalStars =
+          dev.repositories?.nodes?.reduce(
+            (sum: number, repo: any) => sum + (repo.stargazerCount || 0),
+            0
+          ) || 0;
 
         const metrics: DeveloperMetrics = {
-          totalCommits: dev.contributionsCollection?.totalCommitContributions || 0,
-          totalPullRequests: dev.contributionsCollection?.totalPullRequestContributions || 0,
-          totalIssues: dev.contributionsCollection?.totalIssueContributions || 0,
+          totalCommits:
+            dev.contributionsCollection?.totalCommitContributions || 0,
+          totalPullRequests:
+            dev.contributionsCollection?.totalPullRequestContributions || 0,
+          totalIssues:
+            dev.contributionsCollection?.totalIssueContributions || 0,
           totalStars,
           totalRepos: dev.repositories?.totalCount || 0,
           followers: dev.followers?.totalCount || 0,
@@ -563,7 +680,7 @@ export class LeaderboardService {
         scoredDevelopers.push({
           developer: dev,
           metrics,
-          score
+          score,
         });
       } catch (error) {
         Logger.error(`Error scoring developer ${dev.login}:`, error);
@@ -575,7 +692,10 @@ export class LeaderboardService {
   }
 
   // Clear existing leaderboard entries for a location to ensure fresh data
-  private async clearExistingLeaderboardEntries(scope: string, location?: string) {
+  private async clearExistingLeaderboardEntries(
+    scope: string,
+    location?: string
+  ) {
     try {
       const deleted = await prisma.leaderboardEntry.deleteMany({
         where: {
@@ -587,9 +707,16 @@ export class LeaderboardService {
         },
       });
 
-      Logger.info(`Cleared ${deleted.count} existing leaderboard entries for ${scope} ${location || 'global'}`);
+      Logger.info(
+        `Cleared ${deleted.count} existing leaderboard entries for ${scope} ${
+          location || "global"
+        }`
+      );
     } catch (error) {
-      Logger.error(`Error clearing existing entries for ${scope} ${location}:`, error);
+      Logger.error(
+        `Error clearing existing entries for ${scope} ${location}:`,
+        error
+      );
     }
   }
 
@@ -608,24 +735,37 @@ export class LeaderboardService {
   }
 
   // Get top repositories for a developer
-  private getTopRepositories(developer: any): Array<{name: string; stars: number; language: string}> {
+  private getTopRepositories(
+    developer: any
+  ): Array<{ name: string; stars: number; language: string }> {
     // For now, return mock data based on developer stats
     // In a real implementation, you'd fetch actual repository data
-    const languages = ['TypeScript', 'JavaScript', 'Python', 'Java', 'Go', 'Rust', 'C++'];
+    const languages = [
+      "TypeScript",
+      "JavaScript",
+      "Python",
+      "Java",
+      "Go",
+      "Rust",
+      "C++",
+    ];
     const repos = [];
-    
+
     // Generate 2-3 top repositories
-    const repoCount = Math.min(3, Math.max(1, Math.floor((developer.totalStars || 0) / 100)));
+    const repoCount = Math.min(
+      3,
+      Math.max(1, Math.floor((developer.totalStars || 0) / 100))
+    );
     const starsPerRepo = Math.floor((developer.totalStars || 0) / repoCount);
-    
+
     for (let i = 0; i < repoCount; i++) {
       repos.push({
         name: `${developer.githubHandle}-project-${i + 1}`,
         stars: starsPerRepo + Math.floor(Math.random() * 50),
-        language: languages[Math.floor(Math.random() * languages.length)]
+        language: languages[Math.floor(Math.random() * languages.length)],
       });
     }
-    
+
     return repos.sort((a, b) => b.stars - a.stars);
   }
 }
