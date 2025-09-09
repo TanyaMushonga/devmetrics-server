@@ -13,14 +13,15 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String?
-  access_token      String?
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String?
+  id_token          String? @db.Text
   session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@map("accounts")
@@ -37,31 +38,36 @@ model Session {
 }
 
 model Developer {
-  id                 String             @id @default(cuid())
-  githubHandle       String             @unique
-  githubId           String             @unique
-  name               String?
-  avatarUrl          String?
-  bio                String?
-  company            String?
-  location           String?
-  country            String?
-  city               String?
-  continent          String?
-  website            String?
-  twitterHandle      String?
-  totalCommits       Int                @default(0)
-  totalPullRequests  Int                @default(0)
-  totalIssues        Int                @default(0)
-  totalStars         Int                @default(0)
-  totalReviews       Int                @default(0)
-  totalRepos         Int                @default(0)
-  followers          Int                @default(0)
-  following          Int                @default(0)
-  score              Float              @default(0)
-  activityData       Json?
-  lastFetched        DateTime           @updatedAt
-  createdAt          DateTime           @default(now())
+  id            String  @id @default(cuid())
+  githubHandle  String  @unique
+  githubId      String  @unique
+  name          String?
+  avatarUrl     String?
+  bio           String?
+  company       String?
+  location      String?
+  country       String?
+  city          String?
+  continent     String?
+  website       String?
+  twitterHandle String?
+
+  totalCommits      Int @default(0)
+  totalPullRequests Int @default(0)
+  totalIssues       Int @default(0)
+  totalStars        Int @default(0)
+  totalReviews      Int @default(0)
+  totalRepos        Int @default(0)
+  followers         Int @default(0)
+  following         Int @default(0)
+
+  score Float @default(0)
+
+  activityData Json?
+
+  lastFetched DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
   leaderboardEntries LeaderboardEntry[]
   repositories       Repository[]
 
@@ -69,68 +75,75 @@ model Developer {
 }
 
 model LeaderboardEntry {
-  id           String    @id @default(cuid())
-  scope        String
-  location     String?
-  timeframe    String
-  metric       String
-  rank         Int
-  score        Float
-  snapshotDate DateTime  @default(now())
-  developerId  String
-  developer    Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
+  id        String  @id @default(cuid())
+  scope     String // "global", "country", "city", "continent"
+  location  String? // Specific location value
+  timeframe String // "7d", "30d", "90d", "1y"
+  metric    String // "commits", "pullRequests", "issues", "stars", "overall"
+
+  rank  Int
+  score Float
+
+  snapshotDate DateTime @default(now())
+
+  developerId String
+  developer   Developer @relation(fields: [developerId], references: [id], onDelete: Cascade)
 
   @@unique([developerId, scope, location, timeframe, metric, snapshotDate])
   @@map("leaderboard_entries")
 }
 
 model Repository {
-  id              String        @id @default(cuid())
-  githubId        String        @unique
+  id              String    @id @default(cuid())
+  githubId        String    @unique
   name            String
   fullName        String
-  private         Boolean       @default(false)
+  private         Boolean   @default(false)
   description     String?
   htmlUrl         String
   cloneUrl        String
   sshUrl          String
   language        String?
-  stargazersCount Int           @default(0)
-  forksCount      Int           @default(0)
-  size            Int           @default(0)
-  openIssuesCount Int           @default(0)
-  watchersCount   Int           @default(0)
-  defaultBranch   String        @default("main")
+  stargazersCount Int       @default(0)
+  forksCount      Int       @default(0)
+  size            Int       @default(0)
+  openIssuesCount Int       @default(0)
+  watchersCount   Int       @default(0)
+  defaultBranch   String    @default("main")
   createdAt       DateTime
   updatedAt       DateTime
   pushedAt        DateTime?
-  userId          String?
-  developerId     String?
-  commits         Commit[]
-  issues          Issue[]
-  pullRequests    PullRequest[]
-  developer       Developer?    @relation(fields: [developerId], references: [id], onDelete: Cascade)
-  user            User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  developerId String?
+  developer   Developer? @relation(fields: [developerId], references: [id], onDelete: Cascade)
+
+  commits      Commit[]
+  pullRequests PullRequest[]
+  issues       Issue[]
 
   @@map("repositories")
 }
 
 model Commit {
-  id             String     @id @default(cuid())
-  sha            String     @unique
-  message        String
+  id             String   @id @default(cuid())
+  sha            String   @unique
+  message        String   @db.Text
   authorName     String
   authorEmail    String
   authorDate     DateTime
   committerName  String
   committerEmail String
   committerDate  DateTime
-  additions      Int        @default(0)
-  deletions      Int        @default(0)
-  changedFiles   Int        @default(0)
-  repositoryId   String
-  createdAt      DateTime   @default(now())
-  repository     Repository @relation(fields: [repositoryId], references: [id])
+  additions      Int      @default(0)
+  deletions      Int      @default(0)
+  changedFiles   Int      @default(0)
+
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@index([repositoryId])
   @@index([authorDate])
@@ -138,37 +151,39 @@ model Commit {
 }
 
 model PullRequest {
-  id            String     @id @default(cuid())
-  githubId      String     @unique
+  id            String    @id @default(cuid())
+  githubId      String    @unique
   number        Int
   title         String
   state         String
-  watchersCount Int        @default(0)
-  body          String?
+  watchersCount Int       @default(0)
+  body          String?   @db.Text
   createdAt     DateTime
   updatedAt     DateTime
   closedAt      DateTime?
   mergedAt      DateTime?
-  additions     Int        @default(0)
-  deletions     Int        @default(0)
-  changedFiles  Int        @default(0)
-  repositoryId  String
-  repository    Repository @relation(fields: [repositoryId], references: [id])
+  additions     Int       @default(0)
+  deletions     Int       @default(0)
+  changedFiles  Int       @default(0)
+
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id])
 
   @@index([repositoryId])
   @@map("pull_requests")
 }
 
 model Issue {
-  id           String     @id @default(cuid())
-  githubId     String     @unique
-  number       Int
-  title        String
-  state        String
-  body         String?
-  createdAt    DateTime
-  updatedAt    DateTime
-  closedAt     DateTime?
+  id        String    @id @default(cuid())
+  githubId  String    @unique
+  number    Int
+  title     String
+  state     String
+  body      String?   @db.Text
+  createdAt DateTime
+  updatedAt DateTime
+  closedAt  DateTime?
+
   repositoryId String
   repository   Repository @relation(fields: [repositoryId], references: [id])
 
@@ -183,10 +198,12 @@ model CommitStat {
   additions    Int      @default(0)
   deletions    Int      @default(0)
   changedFiles Int      @default(0)
-  userId       String
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, date])
   @@index([userId, date])
@@ -194,14 +211,16 @@ model CommitStat {
 }
 
 model LanguageStat {
-  id         String   @id @default(cuid())
+  id         String @id @default(cuid())
   language   String
   percentage Float
-  bytes      Int      @default(0)
-  userId     String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bytes      Int    @default(0)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, language])
   @@index([userId])
@@ -212,9 +231,11 @@ model ContributionStat {
   id                String   @id @default(cuid())
   date              DateTime @db.Date
   contributionCount Int      @default(0)
-  userId            String
-  createdAt         DateTime @default(now())
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
 
   @@unique([userId, date])
   @@index([userId, date])
@@ -222,32 +243,37 @@ model ContributionStat {
 }
 
 model User {
-  id                String             @id @default(cuid())
-  name              String?
-  email             String             @unique
-  emailVerified     DateTime?
-  image             String?
-  bio               String?
-  location          String?
-  website           String?
-  company           String?
-  blog              String?
-  twitterUsername   String?
-  githubUsername    String?
-  publicRepos       Int?
-  followers         Int?
-  following         Int?
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
-  githubAccessToken String?
+  id              String    @id @default(cuid())
+  name            String?
+  email           String    @unique
+  emailVerified   DateTime?
+  image           String?
+  bio             String?
+  location        String?
+  website         String?
+  company         String?
+  blog            String?
+  twitterUsername String?
+  githubUsername  String?
+  publicRepos     Int?
+  followers       Int?
+  following       Int?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // GitHub access token for external sync server
+  githubAccessToken String?   @db.Text
   tokenExpiresAt    DateTime?
   lastSyncedAt      DateTime?
+
   accounts          Account[]
-  commitStats       CommitStat[]
-  contributionStats ContributionStat[]
-  languageStats     LanguageStat[]
-  repositories      Repository[]
   sessions          Session[]
+  repositories      Repository[]
+  commitStats       CommitStat[]
+  languageStats     LanguageStat[]
+  contributionStats ContributionStat[]
+  interviews        Interview[]
+  communityInterviews CommunityInterview[]
 
   @@map("users")
 }
@@ -259,4 +285,48 @@ model VerificationToken {
 
   @@unique([identifier, token])
   @@map("verificationtokens")
+}
+
+model Interview {
+  id           String   @id @default(cuid())
+  userId       String
+  jobTitle     String
+  experience   String
+  numQuestions Int
+  score        Int      @default(0)
+  feedback     String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers InterviewAnswer[]
+
+  @@map("interviews")
+}
+
+model CommunityInterview {
+  id          String   @id @default(cuid())
+  jobTitle    String
+  experience  String
+  questions   Json
+  createdById String
+  createdAt   DateTime @default(now())
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@map("community_interviews")
+}
+
+model InterviewAnswer {
+  id          String   @id @default(cuid())
+  interviewId String
+  questionId  String
+  question    String
+  answer      String   @db.Text
+  score       Int?
+  feedback    String?
+  createdAt   DateTime @default(now())
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+
+  @@map("interview_answers")
 }
