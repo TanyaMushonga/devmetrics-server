@@ -3,6 +3,7 @@ import { ApiResponseUtil, Logger } from "../../utils";
 import {
   LeaderboardService,
   LeaderboardQuery,
+  normalizeLocation,
 } from "../../services/leaderboard";
 
 const leaderboardService = new LeaderboardService();
@@ -25,9 +26,12 @@ export const getLeaderboardData = async (
       `Fetching leaderboard data: ${scope} ${location} ${metric} ${timeframe}`
     );
 
+    const sanitizedLocation =
+      scope === "global" ? undefined : normalizeLocation(location as string);
+
     const query: LeaderboardQuery = {
       scope: scope as "global" | "country" | "city" | "continent",
-      location: scope === "global" ? undefined : (location as string),
+      location: sanitizedLocation,
       metric: metric as
         | "commits"
         | "pullRequests"
@@ -55,6 +59,9 @@ export const populateLeaderboardForLocation = async (
   try {
     const { scope = "country", location, limit = "100" } = req.body;
 
+    const sanitizedLocation =
+      scope === "global" ? undefined : normalizeLocation(location as string);
+
     if (!location && scope !== "global") {
       ApiResponseUtil.badRequest(
         res,
@@ -63,11 +70,13 @@ export const populateLeaderboardForLocation = async (
       return;
     }
 
-    Logger.info(`Populating leaderboard for: ${scope} ${location || "global"}`);
+    Logger.info(
+      `Populating leaderboard for: ${scope} ${sanitizedLocation || "global"}`
+    );
 
     const result = await leaderboardService.populateLeaderboardData(
       scope,
-      location,
+      sanitizedLocation,
       parseInt(limit as string, 10)
     );
 
