@@ -7,6 +7,26 @@ import {
 } from "./github-search";
 import { DeveloperScoringEngine, DeveloperMetrics } from "./scoring-engine";
 
+// Normalize user-provided location strings for GitHub search (e.g. "Kenyatta Ave, Nairobi, Kenya" -> "Nairobi, Kenya")
+export function normalizeLocation(loc?: string): string | undefined {
+  if (!loc) return undefined;
+  const parts = loc
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return undefined;
+  // Prefer "City, Country" (last two segments) when available
+  if (parts.length >= 2) return parts.slice(-2).join(", ");
+  return parts[0];
+}
+
+// In-memory cooldown to avoid repeated immediate population attempts for the same scope+location
+const populationCooldown = new Map<string, number>();
+const COOLDOWN_MS = parseInt(
+  process.env.POPULATION_COOLDOWN_MS || "300000",
+  10
+); // default 5 minutes
+
 export interface LeaderboardQuery {
   scope: "global" | "country" | "city" | "continent";
   location?: string;
@@ -24,6 +44,7 @@ export interface LeaderboardResponse {
       id: string;
       githubHandle: string;
       name?: string;
+      bio?: string;
       avatarUrl?: string;
       location?: string;
       company?: string;
@@ -38,6 +59,7 @@ export interface LeaderboardResponse {
     activityTrend: number[];
     topRepositories: Array<{
       name: string;
+      url?: string | null;
       stars: number;
       language: string;
     }>;
@@ -116,14 +138,16 @@ export class LeaderboardService {
           },
         });
 
-        return {
-          leaderboard: existingEntries.map((entry) => ({
+        // Resolve top repositories (async) for each cached entry before returning
+        const leaderboard = await Promise.all(
+          existingEntries.map(async (entry) => ({
             rank: entry.rank,
             score: entry.score,
             developer: {
               id: entry.developer.id,
               githubHandle: entry.developer.githubHandle,
               name: entry.developer.name || undefined,
+              bio: entry.developer.bio || undefined,
               avatarUrl: entry.developer.avatarUrl || undefined,
               location: entry.developer.location || undefined,
               company: entry.developer.company || undefined,
@@ -136,9 +160,13 @@ export class LeaderboardService {
               followers: entry.developer.followers,
             },
             activityTrend: this.generateActivityTrend(entry.developer),
-            topRepositories: this.getTopRepositories(entry.developer),
+            topRepositories: await this.getTopRepositories(entry.developer),
             lastUpdated: entry.snapshotDate.toISOString(),
-          })),
+          }))
+        );
+
+        return {
+          leaderboard,
           metadata: {
             total,
             scope,
@@ -175,11 +203,27 @@ export class LeaderboardService {
     limit: number = 100
   ): Promise<{ success: boolean; developersAdded: number; message?: string }> {
     try {
+      const normalizedLocation = normalizeLocation(location);
+
       Logger.info(
         `Starting leaderboard population: ${scope} ${
-          location || "global"
+          normalizedLocation || "global"
         } (limit: ${limit})`
       );
+
+      // Prevent immediate repeated population attempts for the same scope/location
+      const cooldownKey = `${scope}:${normalizedLocation || "global"}`;
+      const lastAttempt = populationCooldown.get(cooldownKey) || 0;
+      if (Date.now() - lastAttempt < COOLDOWN_MS) {
+        Logger.warn(
+          `Population for ${cooldownKey} is on cooldown. Skipping to avoid repeated attempts.`
+        );
+        return {
+          success: false,
+          developersAdded: 0,
+          message: "Cooldown active",
+        };
+      }
 
       // Get GitHub token (you'll need to configure this)
       const githubToken =
@@ -281,11 +325,17 @@ export class LeaderboardService {
       );
 
       if (allDevelopers.length === 0) {
-        Logger.warn(`No developers found for ${scope} ${location || "global"}`);
+        Logger.warn(
+          `No developers found for ${scope} ${normalizedLocation || "global"}`
+        );
+        // mark cooldown so we don't retry immediately
+        populationCooldown.set(cooldownKey, Date.now());
         return {
           success: false,
           developersAdded: 0,
-          message: `No developers found for ${scope} ${location || "global"}`,
+          message: `No developers found for ${scope} ${
+            normalizedLocation || "global"
+          }`,
         };
       }
 
@@ -319,7 +369,7 @@ export class LeaderboardService {
           const developer = await this.saveDeveloper(
             scoredDev.developer,
             scope,
-            location
+            normalizedLocation
           );
           if (developer) {
             developersAdded++;
@@ -364,7 +414,7 @@ export class LeaderboardService {
 
       Logger.info(
         `Successfully populated ${developersAdded} top developers for ${scope} ${
-          location || "global"
+          normalizedLocation || "global"
         } out of ${allDevelopers.length} total found`
       );
 
@@ -410,6 +460,9 @@ export class LeaderboardService {
           0) * 0.8
       );
 
+      const activityData =
+        githubUser.contributionsCollection?.contributionCalendar || null;
+
       const developer = await prisma.developer.upsert({
         where: {
           githubHandle: githubUser.login,
@@ -438,6 +491,7 @@ export class LeaderboardService {
           followers: githubUser.followers?.totalCount || 0,
           following: githubUser.following?.totalCount || 0,
           lastFetched: new Date(),
+          activityData: activityData ? activityData : undefined,
         },
         create: {
           githubHandle: githubUser.login,
@@ -464,8 +518,90 @@ export class LeaderboardService {
           totalRepos: githubUser.repositories?.totalCount || 0,
           followers: githubUser.followers?.totalCount || 0,
           following: githubUser.following?.totalCount || 0,
+          activityData: activityData ? activityData : undefined,
         },
       });
+
+      // Persist top repositories (store up to 10 top repos by stargazers)
+      try {
+        const repoNodes: any[] = githubUser.repositories?.nodes || [];
+        // Normalize repo shape and sort by stargazerCount
+        const sorted = repoNodes
+          .map((r) => ({
+            id: r.id,
+            name: r.name,
+            fullName:
+              r.nameWithOwner ||
+              (r.owner
+                ? `${r.owner.login}/${r.name}`
+                : `${githubUser.login}/${r.name}`),
+            description: r.description,
+            htmlUrl: r.url || r.htmlUrl || null,
+            cloneUrl: r.cloneUrl || null,
+            sshUrl: r.sshUrl || null,
+            language: r.primaryLanguage?.name || r.language || null,
+            stargazersCount: r.stargazerCount || 0,
+            forksCount: r.forkCount || r.forksCount || 0,
+            createdAt: r.createdAt ? new Date(r.createdAt) : undefined,
+            updatedAt: r.updatedAt ? new Date(r.updatedAt) : undefined,
+            pushedAt: r.pushedAt ? new Date(r.pushedAt) : undefined,
+          }))
+          .sort((a, b) => (b.stargazersCount || 0) - (a.stargazersCount || 0))
+          .slice(0, 10);
+
+        for (const repo of sorted) {
+          try {
+            await prisma.repository.upsert({
+              where: { githubId: repo.id },
+              update: {
+                name: repo.name || repo.fullName,
+                fullName: repo.fullName || repo.name,
+                description: repo.description || undefined,
+                htmlUrl:
+                  repo.htmlUrl ||
+                  `https://github.com/${githubUser.login}/${repo.name}`,
+                cloneUrl: repo.cloneUrl || "",
+                sshUrl: repo.sshUrl || "",
+                language: repo.language || "",
+                stargazersCount: repo.stargazersCount || 0,
+                forksCount: repo.forksCount || 0,
+                createdAt: repo.createdAt || new Date(),
+                updatedAt: repo.updatedAt || new Date(),
+                pushedAt: repo.pushedAt || undefined,
+                developerId: developer.id,
+              },
+              create: {
+                githubId: repo.id,
+                name: repo.name || repo.fullName,
+                fullName: repo.fullName || repo.name,
+                description: repo.description || undefined,
+                htmlUrl:
+                  repo.htmlUrl ||
+                  `https://github.com/${githubUser.login}/${repo.name}`,
+                cloneUrl: repo.cloneUrl || "",
+                sshUrl: repo.sshUrl || "",
+                language: repo.language || "",
+                stargazersCount: repo.stargazersCount || 0,
+                forksCount: repo.forksCount || 0,
+                createdAt: repo.createdAt || new Date(),
+                updatedAt: repo.updatedAt || new Date(),
+                pushedAt: repo.pushedAt || undefined,
+                developerId: developer.id,
+              },
+            });
+          } catch (repoErr) {
+            Logger.error(
+              `Failed to upsert repo ${repo.fullName} for ${developer.githubHandle}:`,
+              repoErr
+            );
+          }
+        }
+      } catch (repoProcessErr) {
+        Logger.error(
+          `Error processing repositories for ${githubUser.login}:`,
+          repoProcessErr
+        );
+      }
 
       return developer;
     } catch (error) {
@@ -720,13 +856,33 @@ export class LeaderboardService {
     }
   }
 
-  // Generate activity trend data for the last 30 days
+  // Generate activity trend data for the last 30 days using stored contribution calendar when possible
   private generateActivityTrend(developer: any): number[] {
-    // Generate mock activity trend for now
-    // In a real implementation, you'd fetch actual daily activity data
-    const trend = [];
+    // If we have stored contribution calendar data, use it
+    const trend: number[] = [];
+    const activityData = developer?.activityData;
+    if (
+      activityData &&
+      activityData.weeks &&
+      Array.isArray(activityData.weeks)
+    ) {
+      // GitHub contributionCalendar structure: weeks[] each with contributionDays[] having date and contributionCount
+      const days: number[] = [];
+      for (const week of activityData.weeks) {
+        for (const day of week.contributionDays) {
+          days.push(day.contributionCount || 0);
+        }
+      }
+      // Take last 30 days if available
+      const start = Math.max(0, days.length - 30);
+      const last30 = days.slice(start).slice(-30);
+      // If less than 30, pad the front with zeros
+      while (last30.length < 30) last30.unshift(0);
+      return last30;
+    }
+
+    // Fallback: pseudo-random trend based on developer metrics
     for (let i = 0; i < 30; i++) {
-      // Generate a pseudo-random activity score based on developer metrics
       const baseActivity = Math.floor((developer.totalCommits || 0) / 30);
       const variance = Math.floor(Math.random() * 10);
       trend.push(Math.max(0, baseActivity + variance));
@@ -734,38 +890,45 @@ export class LeaderboardService {
     return trend;
   }
 
-  // Get top repositories for a developer
-  private getTopRepositories(
-    developer: any
-  ): Array<{ name: string; stars: number; language: string }> {
-    // For now, return mock data based on developer stats
-    // In a real implementation, you'd fetch actual repository data
-    const languages = [
-      "TypeScript",
-      "JavaScript",
-      "Python",
-      "Java",
-      "Go",
-      "Rust",
-      "C++",
-    ];
-    const repos = [];
+  // Get top repositories for a developer from the database
+  private async getTopRepositories(
+    developer: any,
+    limit: number = 5
+  ): Promise<
+    Array<{
+      name: string;
+      url?: string | null;
+      stars: number;
+      language: string;
+    }>
+  > {
+    if (!developer || !developer.id) return [];
 
-    // Generate 2-3 top repositories
-    const repoCount = Math.min(
-      3,
-      Math.max(1, Math.floor((developer.totalStars || 0) / 100))
-    );
-    const starsPerRepo = Math.floor((developer.totalStars || 0) / repoCount);
-
-    for (let i = 0; i < repoCount; i++) {
-      repos.push({
-        name: `${developer.githubHandle}-project-${i + 1}`,
-        stars: starsPerRepo + Math.floor(Math.random() * 50),
-        language: languages[Math.floor(Math.random() * languages.length)],
+    try {
+      const repos = await prisma.repository.findMany({
+        where: { developerId: developer.id },
+        orderBy: { stargazersCount: "desc" },
+        take: limit,
+        select: {
+          fullName: true,
+          htmlUrl: true,
+          stargazersCount: true,
+          language: true,
+        },
       });
-    }
 
-    return repos.sort((a, b) => b.stars - a.stars);
+      return repos.map((repo) => ({
+        name: repo.fullName || "Unknown",
+        url: repo.htmlUrl || null,
+        stars: repo.stargazersCount,
+        language: repo.language || "Unknown",
+      }));
+    } catch (error) {
+      Logger.error(
+        `Error fetching repositories for developer ${developer.id}:`,
+        error
+      );
+      return [];
+    }
   }
 }
