@@ -2,6 +2,8 @@
 
 A TypeScript Express backend server for the DevMetrics application that syncs GitHub data and provides API endpoints for user metrics.
 
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
 ## Features
 
 - **GitHub API Integration**: Fetches comprehensive user data from GitHub GraphQL API
@@ -16,82 +18,83 @@ A TypeScript Express backend server for the DevMetrics application that syncs Gi
 src/
 ├── index.ts              # Main Express application entry point
 ├── controllers/          # MVC Controllers
-│   ├── health/
-│   │   ├── healthController.ts    # Health check controller
-│   │   └── index.ts
-│   ├── user/
-│   │   ├── userController.ts      # User management controller
-│   │   └── index.ts
-│   └── index.ts          # Controller exports
-├── routes/               # Express routes (thin layer)
-│   ├── health.ts         # Health check routes
-│   └── users.ts          # User-related routes
+├── routes/               # Express routes
 ├── middleware/           # Express middleware
-│   ├── errorHandler.ts   # Global error handling
-│   ├── requestLogger.ts  # Request logging
-│   ├── validation.ts     # Input validation
-│   ├── rateLimit.ts      # Rate limiting
-│   └── index.ts          # Middleware exports
 ├── services/             # Business logic services
-│   ├── github.ts         # GitHub GraphQL API service
-│   └── sync.ts           # Data synchronization logic
 ├── jobs/                 # Background jobs
-│   └── syncJob.ts        # Scheduled cron job for syncing
 ├── lib/                  # External libraries configuration
-│   └── prisma.ts         # Prisma client configuration
 ├── types/                # TypeScript type definitions
-│   └── index.ts          # Shared types and interfaces
 └── utils/                # Utility functions
-    ├── apiResponse.ts    # Standardized API responses
-    ├── pagination.ts     # Pagination helpers
-    ├── logger.ts         # Logging utility
-    ├── validation.ts     # Validation helpers
-    └── index.ts          # Utility exports
 ```
 
 ## Prerequisites
 
 - Node.js 18+
-- PostgreSQL database
+- PostgreSQL database (Managed or Local)
 - GitHub Personal Access Token with appropriate scopes
+
+## Environment Variables
+
+Create a `.env` file in the root directory:
+
+```env
+# Database (Required)
+# Connection string to your PostgreSQL instance (Managed or Local)
+DATABASE_URL="postgresql://username:password@host:port/database?schema=public"
+
+# GitHub Configuration (Required)
+GITHUB_TOKEN="your_personal_access_token"
+
+# Authentication (Required)
+JWT_SECRET="your_jwt_secret_key"
+
+# Application (Optional)
+PORT=4000
+NODE_ENV=production
+LOG_LEVEL=info
+```
 
 ## Installation
 
 1. Install dependencies:
 
+   ```bash
+   npm install
+   ```
+
+2. Generate Prisma client:
+
+   ```bash
+   npx prisma generate
+   ```
+
+3. Run database migrations:
+
+   ```bash
+   npx prisma migrate deploy
+   ```
+
+4. Start the server:
+   ```bash
+   npm run dev
+   ```
+
+## Docker
+
+You can run the application using Docker Compose. Note that this setup assumes you are connecting to an **external managed database** (defined in your `DATABASE_URL`).
+
+1. Set your environment variables in `.env` (or valid shell environment variables).
+2. Run the container:
+
+   ```bash
+   docker-compose up --build
+   ```
+
+To run in development mode with hot-reloads:
+
 ```bash
-npm install
+docker-compose -f docker-compose.dev.yml up --build
 ```
-
-2. Set up environment variables in `.env`:
-
-```env
-PORT=4000
-DATABASE_URL="postgresql://username:password@localhost:5432/devmetrics?schema=public"
-GITHUB_API_URL=https://api.github.com/graphql
-```
-
-3. Generate Prisma client:
-
-```bash
-npx prisma generate
-```
-
-4. Run database migrations (if needed):
-
-```bash
-npx prisma db push
-```
-
-## Development
-
-Start the development server:
-
-```bash
-npm run dev
-```
-
-The server will start on `http://localhost:4000`
 
 ## API Endpoints
 
@@ -106,74 +109,10 @@ The server will start on `http://localhost:4000`
 - `GET /users/:username/stats` - Get user's contribution statistics
 - `POST /users/:username/sync` - Manually trigger sync for a specific user
 
-## Data Synchronization
-
-The server automatically syncs GitHub data every 6 hours for all users with valid GitHub access tokens. The sync process:
-
-1. Fetches user profile information
-2. Retrieves all repositories with pagination
-3. Gets commits, pull requests, and issues for each repository
-4. Collects language statistics
-5. Updates contribution calendar data
-6. Stores everything in the database
-
-### Manual Sync
-
-You can trigger a manual sync for a specific user:
-
-```bash
-curl -X POST http://localhost:4000/users/{username}/sync
-```
-
-## GitHub Token Setup
-
-Users need GitHub Personal Access Tokens stored in the database with the following scopes:
-
-- `read:user` - Access to user profile
-- `public_repo` - Access to public repositories
-- `repo` - Access to private repositories (if needed)
-
-## Database Schema
-
-The application uses the following main models:
-
-- `User` - User profiles and GitHub tokens
-- `Repository` - Repository information
-- `Commit` - Individual commits
-- `PullRequest` - Pull request data
-- `Issue` - Repository issues
-- `CommitStat` - Daily commit statistics
-- `ContributionStat` - Daily contribution counts
-- `LanguageStat` - Programming language usage
-
-## Production Deployment
-
-1. Build the application:
-
-```bash
-npm run build
-```
-
-2. Start the production server:
-
-```bash
-npm start
-```
-
-## Monitoring
-
-- Check logs for sync operations and errors
-- Monitor the `/health` endpoint for server status
-- Database queries are logged in development mode
-
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
 
 ## License
 
-[Add your license information here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
