@@ -1,25 +1,6 @@
 version: "3.8"
 
 services:
-  # PostgreSQL Database
-  postgres:
-    image: postgres:15-alpine
-    container_name: devmetrics-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: devmetrics
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # Application
   app:
     build:
@@ -28,14 +9,14 @@ services:
     container_name: devmetrics-app
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      - "${PORT:-4000}:${PORT:-4000}"
     environment:
-      NODE_ENV: development
-      PORT: 4000
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/devmetrics
-    depends_on:
-      postgres:
-        condition: service_healthy
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-4000}
+      DATABASE_URL: ${DATABASE_URL}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      JWT_SECRET: ${JWT_SECRET}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     healthcheck:
       test:
         [
@@ -50,6 +31,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-
-volumes:
-  postgres_data:
