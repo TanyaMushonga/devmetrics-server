@@ -1,11 +1,15 @@
-import { prisma as dbPrisma } from "@tanyamushonga/devmetrics-db";
+import { PrismaClient } from "@prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
 
 const globalForPrisma = global as unknown as {
-  prisma: typeof dbPrisma;
+  prisma: PrismaClient;
 };
 
-const prisma = globalForPrisma.prisma || dbPrisma.$extends(withAccelerate());
+const prisma =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    log: ["query"],
+  }).$extends(withAccelerate());
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 

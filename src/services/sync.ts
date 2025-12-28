@@ -135,7 +135,7 @@ async function syncRepositories(
       // Sync commits, PRs, and issues for this repository
       const [owner, repoName] = repo.nameWithOwner.split("/");
       await Promise.all([
-        syncRepositoryCommits(token, repository.id, owner, repoName),
+        syncRepositoryCommits(userId, repository.id, owner, repoName, token),
         syncRepositoryPullRequests(token, repository.id, owner, repoName),
         syncRepositoryIssues(token, repository.id, owner, repoName),
         syncLanguageStats(token, userId, owner, repoName),
@@ -146,54 +146,110 @@ async function syncRepositories(
   }
 }
 
-async function syncRepositoryCommits(
-  token: string,
+export async function syncRepositoryCommits(
+  userId: string,
   repositoryId: string,
   owner: string,
-  repo: string
+  repo: string,
+  token: string
 ) {
   try {
-    const commitsData = (await fetchRepositoryCommits(
-      token,
-      owner,
-      repo
-    )) as any;
-    const commits =
-      commitsData.repository?.defaultBranchRef?.target?.history?.nodes || [];
+    Logger.sync(
+      "INFO",
+      userId,
+      `Syncing commits for repository: ${owner}/${repo}`
+    );
 
-    for (const commit of commits) {
+    let allCommits: any[] = [];
+    let hasNextPage = true;
+    let cursor: string | undefined;
+    let pageCount = 0;
+
+    // Paginate through all commits
+    while (hasNextPage && pageCount < 50) {
+      // Safety limit to prevent infinite loops
+      const response = await fetchRepositoryCommits(
+        token,
+        owner,
+        repo,
+        undefined,
+        cursor
+      );
+
+      const commitsPage = (response as any).repository?.defaultBranchRef?.target
+        ?.history;
+
+      if (!commitsPage) {
+        Logger.sync(
+          "WARN",
+          userId,
+          `No commit history found for repository: ${owner}/${repo}`
+        );
+        break;
+      }
+
+      const commits = commitsPage.nodes || [];
+      allCommits = allCommits.concat(commits);
+
+      hasNextPage = commitsPage.pageInfo?.hasNextPage || false;
+      cursor = commitsPage.pageInfo?.endCursor;
+      pageCount++;
+
+      Logger.sync(
+        "INFO",
+        userId,
+        `Fetched page ${pageCount} with ${commits.length} commits for ${owner}/${repo}`
+      );
+    }
+
+    // Save all commits to database
+    for (const commit of allCommits) {
       await prisma.commit.upsert({
-        where: { sha: commit.oid },
+        where: {
+          sha: commit.oid,
+        },
         update: {
           message: commit.message,
-          authorName: commit.author.name,
-          authorEmail: commit.author.email,
-          authorDate: new Date(commit.author.date),
-          committerName: commit.committer.name,
-          committerEmail: commit.committer.email,
-          committerDate: new Date(commit.committer.date),
-          additions: commit.additions,
-          deletions: commit.deletions,
-          changedFiles: commit.changedFiles,
+          authorName: commit.author?.name || "",
+          authorEmail: commit.author?.email || "",
+          authorDate: new Date(commit.author?.date || new Date()),
+          committerName: commit.committer?.name || "",
+          committerEmail: commit.committer?.email || "",
+          committerDate: new Date(commit.committer?.date || new Date()),
+          additions: commit.additions || 0,
+          deletions: commit.deletions || 0,
+          changedFiles: commit.changedFiles || 0,
+          repositoryId,
         },
         create: {
           sha: commit.oid,
           message: commit.message,
-          authorName: commit.author.name,
-          authorEmail: commit.author.email,
-          authorDate: new Date(commit.author.date),
-          committerName: commit.committer.name,
-          committerEmail: commit.committer.email,
-          committerDate: new Date(commit.committer.date),
-          additions: commit.additions,
-          deletions: commit.deletions,
-          changedFiles: commit.changedFiles,
-          repositoryId: repositoryId,
+          authorName: commit.author?.name || "",
+          authorEmail: commit.author?.email || "",
+          authorDate: new Date(commit.author?.date || new Date()),
+          committerName: commit.committer?.name || "",
+          committerEmail: commit.committer?.email || "",
+          committerDate: new Date(commit.committer?.date || new Date()),
+          additions: commit.additions || 0,
+          deletions: commit.deletions || 0,
+          changedFiles: commit.changedFiles || 0,
+          repositoryId,
         },
       });
     }
+
+    Logger.sync(
+      "SUCCESS",
+      userId,
+      `Synced ${allCommits.length} total commits across ${pageCount} pages for repository: ${owner}/${repo}`
+    );
   } catch (error) {
-    console.error(`Error syncing commits for ${owner}/${repo}:`, error);
+    Logger.sync(
+      "ERROR",
+      userId,
+      `Error syncing commits for repository ${owner}/${repo}: ${error}`
+    );
+    throw error;
   }
 }
 
@@ -379,4 +435,30 @@ export async function syncAllUsers() {
   }
 
   console.log("Completed sync for all users");
+}
+
+export async function cleanupOldCommits() {
+  try {
+    const sixMonthsAgo = new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000);
+
+    Logger.sync(
+      "INFO",
+      "system",
+      `Cleaning up commits older than ${sixMonthsAgo.toISOString()}`
+    );
+
+    const result = await prisma.commit.deleteMany({
+      where: {
+        authorDate: {
+          lt: sixMonthsAgo,
+        },
+      },
+    });
+
+    Logger.sync("SUCCESS", "system", `Cleaned up ${result.count} old commits`);
+    return result.count;
+  } catch (error) {
+    Logger.sync("ERROR", "system", `Error cleaning up old commits: ${error}`);
+    throw error;
+  }
 }
